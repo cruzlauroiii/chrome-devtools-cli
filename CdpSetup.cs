@@ -19,10 +19,9 @@ public static void Click(int X,int Y){SetCursorPos(X,Y);System.Threading.Thread.
 $R=[System.Windows.Automation.AutomationElement]::RootElement
 $C=New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ClassNameProperty,'Chrome_WidgetWin_1')
 foreach($W in $R.FindAll([System.Windows.Automation.TreeScope]::Children,$C)){
-[CA]::SetForegroundWindow($W.Current.NativeWindowHandle);Start-Sleep -Milliseconds 300
 $B=New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty,[System.Windows.Automation.ControlType]::Button)
 foreach($N in $W.FindAll([System.Windows.Automation.TreeScope]::Descendants,$B)){
-if($N.Current.Name -eq 'Allow'){$P=$N.Current.BoundingRectangle;[CA]::Click([int]($P.X+$P.Width/2),[int]($P.Y+$P.Height/2));Start-Sleep -Milliseconds 200;[CA]::Click([int]($P.X+$P.Width/2),[int]($P.Y+$P.Height/2));Write-Host 'Clicked Allow'}
+if($N.Current.Name -eq 'Allow'){[CA]::SetForegroundWindow($W.Current.NativeWindowHandle);Start-Sleep -Milliseconds 500;$P=$N.Current.BoundingRectangle;[CA]::Click([int]($P.X+$P.Width/2),[int]($P.Y+$P.Height/2));Start-Sleep -Milliseconds 200;[CA]::Click([int]($P.X+$P.Width/2),[int]($P.Y+$P.Height/2));Write-Host 'Clicked Allow'}
 }}";
 
     private static void ClickAllowPrompt()
