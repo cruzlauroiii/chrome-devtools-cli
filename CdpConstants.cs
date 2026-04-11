@@ -158,7 +158,9 @@ public static class CdpProto
     public const string PrefersColorScheme = "prefers-color-scheme";
     public const string ChromeWidgetClass = "Chrome_WidgetWin_1";
     public const string AllowButtonName = "Allow";
+    public const string TurnOffButtonName = "Turn off in settings";
     public const string ScreenshotPrefix = "screenshot-";
+    public const string DesktopScreenshotFile = "desktop.png";
     public const string PngFormat = "png";
     public const string ErrorPrefix = "ERROR: ";
     public const string KeyDown = "keyDown";
@@ -192,9 +194,14 @@ public static class CdpTimeout
 
 public static class CdpWin32
 {
-    public const uint MouseLeftDown = 2;
-    public const uint MouseLeftUp = 4;
     public const int SwMaximize = 3;
+    public const uint KeyEventUp = 2;
+    public const byte VkTab = 0x09;
+    public const byte VkReturn = 0x0D;
+    public const byte VkSpace = 0x20;
+    public const string ImmersiveShellClsid = "C2F03A33-21F5-47FA-B4BB-156362A2F239";
+    public const string VirtualDesktopManagerInternalClsid = "C5E0CDCA-7B6E-41B2-9FC4-D93975CC467B";
+    public const string IVirtualDesktopManagerInternalIid = "53F5CA0B-158F-4124-900C-057158060B27";
 }
 
 public static class CdpModifier

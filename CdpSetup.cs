@@ -5,57 +5,139 @@ using System.Windows.Automation;
 public partial class CdpCli
 {
     [DllImport("user32.dll")]
-    private static extern bool SetProcessDPIAware();
-
-    [DllImport("user32.dll")]
-    private static extern bool SetCursorPos(int X, int Y);
-
-    [DllImport("user32.dll", EntryPoint = "mouse_event")]
-    private static extern void MouseEvent(uint Flags, uint X, uint Y, uint Data, int ExtraInfo);
-
-    [DllImport("user32.dll")]
     private static extern bool SetForegroundWindow(IntPtr Handle);
 
     [DllImport("user32.dll")]
     private static extern bool ShowWindow(IntPtr Handle, int Command);
 
-    private static void ClickAtPoint(int X, int Y)
+    [DllImport("user32.dll", EntryPoint = "keybd_event")]
+    private static extern void KeybdEvent(byte Key, byte Scan, uint Flags, UIntPtr Extra);
+
+    [ComImport, Guid("A5CD92FF-29BE-454C-8D04-D82879FB3F1B")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IVirtualDesktopManager
     {
-        SetCursorPos(X, Y);
-        Thread.Sleep(CdpTimeout.ClickDelayMs);
-        MouseEvent(CdpWin32.MouseLeftDown, 0, 0, 0, 0);
-        MouseEvent(CdpWin32.MouseLeftUp, 0, 0, 0, 0);
+        bool IsWindowOnCurrentVirtualDesktop(IntPtr TopLevelWindow);
+        Guid GetWindowDesktopId(IntPtr TopLevelWindow);
+        void MoveWindowToDesktop(IntPtr TopLevelWindow, ref Guid DesktopId);
+    }
+
+    [ComImport, Guid("AA509086-5CA9-4C25-8F95-589D3C07B48A")]
+    private class VirtualDesktopManager { }
+
+    [DllImport("user32.dll")]
+    private static extern bool SwitchToThisWindow(IntPtr Handle, bool AltTab);
+
+    private static void SwitchToWindow(IntPtr Handle)
+    {
+        try
+        {
+            var Manager = (IVirtualDesktopManager)new VirtualDesktopManager();
+            if (!Manager.IsWindowOnCurrentVirtualDesktop(Handle))
+            {
+                var TargetDesktop = Manager.GetWindowDesktopId(Handle);
+                var ServiceProvider = (IServiceProvider10)Activator.CreateInstance(Type.GetTypeFromCLSID(new Guid(CdpWin32.ImmersiveShellClsid))!)!;
+                var InternalManager = (IVirtualDesktopManagerInternal)ServiceProvider.QueryService(new Guid(CdpWin32.VirtualDesktopManagerInternalClsid), new Guid(CdpWin32.IVirtualDesktopManagerInternalIid));
+                InternalManager.SwitchDesktopByDesktopId(ref TargetDesktop);
+                Thread.Sleep(CdpTimeout.ForegroundDelayMs);
+            }
+        }
+        catch { /* Virtual desktop API not available */ }
+        ShowWindow(Handle, CdpWin32.SwMaximize);
+        SetForegroundWindow(Handle);
+    }
+
+    [ComImport, Guid("6D5140C1-7436-11CE-8034-00AA006009FA")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IServiceProvider10
+    {
+        [return: MarshalAs(UnmanagedType.IUnknown)]
+        object QueryService(ref Guid Service, ref Guid Riid);
+    }
+
+    [ComImport, Guid("53F5CA0B-158F-4124-900C-057158060B27")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IVirtualDesktopManagerInternal
+    {
+        int GetCount(IntPtr Monitor);
+        void MoveViewToDesktop(object View, object Desktop);
+        bool CanViewMoveDesktops(object View);
+        object GetCurrentDesktop(IntPtr Monitor);
+        void GetDesktops(IntPtr Monitor, out object Desktops);
+        object GetAdjacentDesktop(object From, int Direction);
+        void SwitchDesktop(IntPtr Monitor, object Desktop);
+        object CreateDesktop(IntPtr Monitor);
+        void MoveDesktop(object Desktop, IntPtr Monitor, int Index);
+        void RemoveDesktop(object Remove, object Fallback);
+        object FindDesktop(ref Guid DesktopId);
+        void GetDesktopSwitchIncludeExcludeViews(object Desktop, out object Views1, out object Views2);
+        void SetDesktopName(object Desktop, [MarshalAs(UnmanagedType.HString)] string Name);
+        void SetDesktopWallpaper(object Desktop, [MarshalAs(UnmanagedType.HString)] string Path);
+        void UpdateWallpaperPathForAllDesktops([MarshalAs(UnmanagedType.HString)] string Path);
+        void CopyDesktopState(object Source, object Target);
+        void CreateRemoteDesktop([MarshalAs(UnmanagedType.HString)] string Path, out object Desktop);
+        void SwitchRemoteDesktop(object Desktop, int SwitchType);
+        void SwitchDesktopByDesktopId(ref Guid DesktopId);
+    }
+
+    private static void PressKey(byte Key)
+    {
+        KeybdEvent(Key, 0, 0, UIntPtr.Zero);
+        KeybdEvent(Key, 0, CdpWin32.KeyEventUp, UIntPtr.Zero);
     }
 
     private static void ClickAllowPrompt()
     {
         try
         {
-            SetProcessDPIAware();
             var Root = AutomationElement.RootElement;
             var ChromeCondition = new PropertyCondition(AutomationElement.ClassNameProperty, CdpProto.ChromeWidgetClass);
             foreach (AutomationElement Window in Root.FindAll(TreeScope.Children, ChromeCondition))
             {
-                ShowWindow(new IntPtr(Window.Current.NativeWindowHandle), CdpWin32.SwMaximize);
+                var WindowHandle = new IntPtr(Window.Current.NativeWindowHandle);
+                var HasAllow = false;
                 var ButtonCondition = new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button);
                 foreach (AutomationElement Button in Window.FindAll(TreeScope.Descendants, ButtonCondition))
                 {
-                    if (Button.Current.Name == CdpProto.AllowButtonName)
-                    {
-                        SetForegroundWindow(new IntPtr(Window.Current.NativeWindowHandle));
-                        Thread.Sleep(CdpTimeout.ForegroundDelayMs);
-                        dynamic Bounds = Button.GetCurrentPropertyValue(AutomationElement.BoundingRectangleProperty);
-                        var CenterX = (int)(Bounds.X + (Bounds.Width / 2));
-                        var CenterY = (int)(Bounds.Y + (Bounds.Height / 2));
-                        ClickAtPoint(CenterX, CenterY);
-                        Thread.Sleep(CdpTimeout.ClickRepeatDelayMs);
-                        ClickAtPoint(CenterX, CenterY);
-                        Console.Error.WriteLine(string.Concat(CdpShell.ClickedPrefix, " ", CdpProto.AllowButtonName));
-                    }
+                    if (Button.Current.Name == CdpProto.AllowButtonName) { HasAllow = true; break; }
                 }
+                if (!HasAllow) continue;
+                SwitchToWindow(WindowHandle);
+                Thread.Sleep(CdpTimeout.ForegroundDelayMs);
+                PressKey(CdpWin32.VkTab);
+                Thread.Sleep(CdpTimeout.ClickDelayMs);
+                PressKey(CdpWin32.VkTab);
+                Thread.Sleep(CdpTimeout.ClickDelayMs);
+                PressKey(CdpWin32.VkReturn);
+                Console.Error.WriteLine(string.Concat(CdpShell.ClickedPrefix, " ", CdpProto.AllowButtonName));
+                return;
             }
         }
         catch { /* Prompt may not be present or was dismissed */ }
+    }
+
+    private static void ExecuteScreenshotDesktop(Dictionary<string, object> Args)
+    {
+        var Bounds = System.Windows.Forms.Screen.PrimaryScreen!.Bounds;
+        using var Bitmap = new System.Drawing.Bitmap(Bounds.Width, Bounds.Height);
+        using var Graphics = System.Drawing.Graphics.FromImage(Bitmap);
+        Graphics.CopyFromScreen(Bounds.Location, System.Drawing.Point.Empty, Bounds.Size);
+        var OutputPath = Args.TryGetValue(CdpArg.FilePath, out var FilePath) ? FilePath.ToString()! : Path.Combine(Path.GetTempPath(), string.Concat(CdpProto.ScreenshotPrefix, CdpProto.DesktopScreenshotFile));
+        Bitmap.Save(OutputPath);
+        Console.WriteLine(string.Concat(CdpMsg.ScreenshotSaved, OutputPath));
+    }
+
+    private static void FocusChrome()
+    {
+        var Root = AutomationElement.RootElement;
+        var ChromeCondition = new PropertyCondition(AutomationElement.ClassNameProperty, CdpProto.ChromeWidgetClass);
+        var Window = Root.FindFirst(TreeScope.Children, ChromeCondition);
+        if (Window != null)
+        {
+            SwitchToWindow(new IntPtr(Window.Current.NativeWindowHandle));
+            Console.WriteLine("Chrome focused");
+        }
+        else Console.Error.WriteLine("Chrome not found");
     }
 
     private static (string Command, Dictionary<string, object> Args) ParseArgs(string[] Argv)

@@ -23,6 +23,8 @@ public partial class CdpCli
         if (Argv.Length == 0 || Argv[0] is "--help" or "-h" or "help") { PrintHelp(); return; }
         var (Command, ParsedArgs) = ParseArgs(Argv);
         if (Command == "allow") { ClickAllowPrompt(); return; }
+        if (Command == "screenshot_desktop") { ExecuteScreenshotDesktop(ParsedArgs); return; }
+        if (Command == "focus_chrome") { FocusChrome(); return; }
         await ConnectToChrome();
         if (ParsedArgs.TryGetValue(CdpArg.PageId, out var GlobalPageId) && Command is not "select_page" and not "close_page")
         {
@@ -64,15 +66,16 @@ public partial class CdpCli
 
     private async Task ConnectToChrome()
     {
+        var AllowClicked = false;
         for (var Attempt = 0; Attempt < 3; Attempt++)
         {
-            if (!File.Exists(ActivePortFile)) { ClickAllowPrompt(); await Task.Delay(CdpTimeout.RetryDelayMs); if (!File.Exists(ActivePortFile)) continue; }
+            if (!File.Exists(ActivePortFile)) { if (!AllowClicked) { ClickAllowPrompt(); AllowClicked = true; } await Task.Delay(CdpTimeout.RetryDelayMs); if (!File.Exists(ActivePortFile)) continue; }
             var Lines = File.ReadAllLines(ActivePortFile).Where(L => !string.IsNullOrWhiteSpace(L)).ToArray();
             if (Lines.Length < 2) continue;
             var Endpoint = string.Concat(CdpProto.WsPrefix, Lines[0].Trim(), Lines[1].Trim());
             WebSocket = new ClientWebSocket();
             using var Timeout = new CancellationTokenSource(CdpTimeout.ConnectTimeoutMs);
-            _ = Task.Run(async () => { await Task.Delay(CdpTimeout.PageLoadDelayMs); ClickAllowPrompt(); });
+            if (!AllowClicked) { _ = Task.Run(async () => { await Task.Delay(CdpTimeout.PageLoadDelayMs); ClickAllowPrompt(); }); AllowClicked = true; }
             try { await WebSocket.ConnectAsync(new Uri(Endpoint), Timeout.Token); return; }
             catch { await Task.Delay(CdpTimeout.RetryDelayMs); }
         }
