@@ -1,43 +1,61 @@
 #pragma warning disable SA1400, SA1649, SA1402, SA1502, SA1128, SA1501, SA1119, SA1503, SA1513, SA1413, S6608
-using System.Diagnostics;
+using System.Runtime.InteropServices;
+using System.Windows.Automation;
 
 public partial class CdpCli
 {
-    private static readonly string AllowClickScript = @"
-Add-Type -AssemblyName UIAutomationClient;Add-Type -AssemblyName UIAutomationTypes
-Add-Type @'
-using System;using System.Runtime.InteropServices;
-public class CA{
-[DllImport(""user32.dll"")]public static extern bool SetProcessDPIAware();
-[DllImport(""user32.dll"")]public static extern bool SetCursorPos(int X,int Y);
-[DllImport(""user32.dll"")]public static extern void mouse_event(uint F,uint X,uint Y,uint D,int E);
-[DllImport(""user32.dll"")]public static extern bool SetForegroundWindow(IntPtr H);
-public static void Click(int X,int Y){SetCursorPos(X,Y);System.Threading.Thread.Sleep(150);mouse_event(2,0,0,0,0);mouse_event(4,0,0,0,0);}
-[DllImport(""user32.dll"")]public static extern bool ShowWindow(IntPtr H,int C);
-}
-'@
-[CA]::SetProcessDPIAware()|Out-Null
-$R=[System.Windows.Automation.AutomationElement]::RootElement
-$C=New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ClassNameProperty,'Chrome_WidgetWin_1')
-foreach($W in $R.FindAll([System.Windows.Automation.TreeScope]::Children,$C)){
-[CA]::ShowWindow($W.Current.NativeWindowHandle,3)|Out-Null
-$B=New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty,[System.Windows.Automation.ControlType]::Button)
-foreach($N in $W.FindAll([System.Windows.Automation.TreeScope]::Descendants,$B)){
-if($N.Current.Name -eq 'Allow'){[CA]::SetForegroundWindow($W.Current.NativeWindowHandle);Start-Sleep -Milliseconds 500;$P=$N.Current.BoundingRectangle;[CA]::Click([int]($P.X+$P.Width/2),[int]($P.Y+$P.Height/2));Start-Sleep -Milliseconds 200;[CA]::Click([int]($P.X+$P.Width/2),[int]($P.Y+$P.Height/2));Write-Host 'Clicked Allow'}
-}}";
+    [DllImport("user32.dll")]
+    private static extern bool SetProcessDPIAware();
+
+    [DllImport("user32.dll")]
+    private static extern bool SetCursorPos(int X, int Y);
+
+    [DllImport("user32.dll", EntryPoint = "mouse_event")]
+    private static extern void MouseEvent(uint Flags, uint X, uint Y, uint Data, int ExtraInfo);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr Handle);
+
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr Handle, int Command);
+
+    private static void ClickAtPoint(int X, int Y)
+    {
+        SetCursorPos(X, Y);
+        Thread.Sleep(CdpTimeout.ClickDelayMs);
+        MouseEvent(CdpWin32.MouseLeftDown, 0, 0, 0, 0);
+        MouseEvent(CdpWin32.MouseLeftUp, 0, 0, 0, 0);
+    }
 
     private static void ClickAllowPrompt()
     {
         try
         {
-            var StartInfo = new ProcessStartInfo(CdpShell.PowerShell) { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
-            StartInfo.ArgumentList.Add(CdpShell.NoProfile);
-            StartInfo.ArgumentList.Add(CdpShell.CommandFlag);
-            StartInfo.ArgumentList.Add(AllowClickScript);
-            var Process = System.Diagnostics.Process.Start(StartInfo);
-            if (Process != null) { var Output = Process.StandardOutput.ReadToEnd(); Process.WaitForExit(CdpTimeout.ProcessWaitMs); foreach (var Line in Output.Split('\n')) { var Trimmed = Line.Trim(); if (Trimmed.StartsWith(CdpShell.ClickedPrefix, StringComparison.Ordinal)) Console.Error.WriteLine(Trimmed); } }
+            SetProcessDPIAware();
+            var Root = AutomationElement.RootElement;
+            var ChromeCondition = new PropertyCondition(AutomationElement.ClassNameProperty, CdpProto.ChromeWidgetClass);
+            foreach (AutomationElement Window in Root.FindAll(TreeScope.Children, ChromeCondition))
+            {
+                ShowWindow(new IntPtr(Window.Current.NativeWindowHandle), CdpWin32.SwMaximize);
+                var ButtonCondition = new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button);
+                foreach (AutomationElement Button in Window.FindAll(TreeScope.Descendants, ButtonCondition))
+                {
+                    if (Button.Current.Name == CdpProto.AllowButtonName)
+                    {
+                        SetForegroundWindow(new IntPtr(Window.Current.NativeWindowHandle));
+                        Thread.Sleep(CdpTimeout.ForegroundDelayMs);
+                        dynamic Bounds = Button.GetCurrentPropertyValue(AutomationElement.BoundingRectangleProperty);
+                        var CenterX = (int)(Bounds.X + (Bounds.Width / 2));
+                        var CenterY = (int)(Bounds.Y + (Bounds.Height / 2));
+                        ClickAtPoint(CenterX, CenterY);
+                        Thread.Sleep(CdpTimeout.ClickRepeatDelayMs);
+                        ClickAtPoint(CenterX, CenterY);
+                        Console.Error.WriteLine(string.Concat(CdpShell.ClickedPrefix, " ", CdpProto.AllowButtonName));
+                    }
+                }
+            }
         }
-        catch { /* Prompt may not be present */ }
+        catch { /* Prompt may not be present or was dismissed */ }
     }
 
     private static (string Command, Dictionary<string, object> Args) ParseArgs(string[] Argv)

@@ -103,9 +103,6 @@ public static class CdpArg
 
 public static class CdpShell
 {
-    public const string PowerShell = "powershell.exe";
-    public const string NoProfile = "-NoProfile";
-    public const string CommandFlag = "-Command";
     public const string ClickedPrefix = "Clicked";
 }
 
@@ -159,6 +156,8 @@ public static class CdpProto
     public const string DataUidSelector = "[data-uid=\"";
     public const string DataUidSelectorEnd = "\"]";
     public const string PrefersColorScheme = "prefers-color-scheme";
+    public const string ChromeWidgetClass = "Chrome_WidgetWin_1";
+    public const string AllowButtonName = "Allow";
     public const string ScreenshotPrefix = "screenshot-";
     public const string PngFormat = "png";
     public const string ErrorPrefix = "ERROR: ";
@@ -185,7 +184,17 @@ public static class CdpTimeout
     public const int NavigationDelayMs = 3000;
     public const int PageLoadDelayMs = 2000;
     public const int ProcessWaitMs = 15000;
+    public const int ClickDelayMs = 150;
+    public const int ClickRepeatDelayMs = 200;
+    public const int ForegroundDelayMs = 500;
     public const int BufferSize = 1024 * 1024;
+}
+
+public static class CdpWin32
+{
+    public const uint MouseLeftDown = 2;
+    public const uint MouseLeftUp = 4;
+    public const int SwMaximize = 3;
 }
 
 public static class CdpModifier
