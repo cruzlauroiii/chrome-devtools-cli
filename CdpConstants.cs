@@ -196,9 +196,17 @@ public static class CdpWin32
 {
     public const int SwMaximize = 3;
     public const uint KeyEventUp = 2;
+    public const uint MouseLeftDown = 2;
+    public const uint MouseLeftUp = 4;
     public const byte VkTab = 0x09;
     public const byte VkReturn = 0x0D;
     public const byte VkSpace = 0x20;
+    public const byte VkControl = 0xA2;
+    public const byte VkLWin = 0x5B;
+    public const byte VkLeft = 0x25;
+    public const byte VkRight = 0x27;
+    public const byte VkEscape = 0x1B;
+    public const byte VkF6 = 0x75;
     public const string ImmersiveShellClsid = "C2F03A33-21F5-47FA-B4BB-156362A2F239";
     public const string VirtualDesktopManagerInternalClsid = "C5E0CDCA-7B6E-41B2-9FC4-D93975CC467B";
     public const string IVirtualDesktopManagerInternalIid = "53F5CA0B-158F-4124-900C-057158060B27";

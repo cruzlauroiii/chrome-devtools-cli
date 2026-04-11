@@ -5,10 +5,19 @@ using System.Windows.Automation;
 public partial class CdpCli
 {
     [DllImport("user32.dll")]
+    private static extern bool SetProcessDPIAware();
+
+    [DllImport("user32.dll")]
     private static extern bool SetForegroundWindow(IntPtr Handle);
 
     [DllImport("user32.dll")]
     private static extern bool ShowWindow(IntPtr Handle, int Command);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetCursorPos(int X, int Y);
+
+    [DllImport("user32.dll", EntryPoint = "mouse_event")]
+    private static extern void MouseEvent(uint Flags, uint X, uint Y, uint Data, int ExtraInfo);
 
     [DllImport("user32.dll", EntryPoint = "keybd_event")]
     private static extern void KeybdEvent(byte Key, byte Scan, uint Flags, UIntPtr Extra);
@@ -80,35 +89,38 @@ public partial class CdpCli
         void SwitchDesktopByDesktopId(ref Guid DesktopId);
     }
 
-    private static void PressKey(byte Key)
-    {
-        KeybdEvent(Key, 0, 0, UIntPtr.Zero);
-        KeybdEvent(Key, 0, CdpWin32.KeyEventUp, UIntPtr.Zero);
-    }
-
     private static void ClickAllowPrompt()
     {
         try
         {
+            SetProcessDPIAware();
             var Root = AutomationElement.RootElement;
             var ChromeCondition = new PropertyCondition(AutomationElement.ClassNameProperty, CdpProto.ChromeWidgetClass);
+            if (Root.FindFirst(TreeScope.Children, ChromeCondition) == null)
+            {
+                SwitchDesktopRight();
+                if (Root.FindFirst(TreeScope.Children, ChromeCondition) == null) { SwitchDesktopLeft(); SwitchDesktopLeft(); }
+            }
             foreach (AutomationElement Window in Root.FindAll(TreeScope.Children, ChromeCondition))
             {
                 var WindowHandle = new IntPtr(Window.Current.NativeWindowHandle);
-                var HasAllow = false;
+                AutomationElement? AllowButton = null;
                 var ButtonCondition = new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button);
                 foreach (AutomationElement Button in Window.FindAll(TreeScope.Descendants, ButtonCondition))
                 {
-                    if (Button.Current.Name == CdpProto.AllowButtonName) { HasAllow = true; break; }
+                    if (Button.Current.Name == CdpProto.AllowButtonName) { AllowButton = Button; break; }
                 }
-                if (!HasAllow) continue;
+                if (AllowButton == null) continue;
                 SwitchToWindow(WindowHandle);
                 Thread.Sleep(CdpTimeout.ForegroundDelayMs);
-                PressKey(CdpWin32.VkTab);
+                dynamic Bounds = AllowButton!.GetCurrentPropertyValue(AutomationElement.BoundingRectangleProperty);
+                var ClickX = (int)(Bounds.X + (Bounds.Width / 2));
+                var ClickY = (int)(Bounds.Y + (Bounds.Height / 2));
+                Console.Error.WriteLine(string.Concat(CdpShell.ClickedPrefix, " ", CdpProto.AllowButtonName, " ", ClickX.ToString(System.Globalization.CultureInfo.InvariantCulture), ",", ClickY.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+                SetCursorPos(ClickX, ClickY);
                 Thread.Sleep(CdpTimeout.ClickDelayMs);
-                PressKey(CdpWin32.VkTab);
-                Thread.Sleep(CdpTimeout.ClickDelayMs);
-                PressKey(CdpWin32.VkReturn);
+                MouseEvent(CdpWin32.MouseLeftDown, 0, 0, 0, 0);
+                MouseEvent(CdpWin32.MouseLeftUp, 0, 0, 0, 0);
                 Console.Error.WriteLine(string.Concat(CdpShell.ClickedPrefix, " ", CdpProto.AllowButtonName));
                 return;
             }
@@ -127,11 +139,50 @@ public partial class CdpCli
         Console.WriteLine(string.Concat(CdpMsg.ScreenshotSaved, OutputPath));
     }
 
+    private static void SwitchDesktopRight()
+    {
+        KeybdEvent(CdpWin32.VkLWin, 0, 0, UIntPtr.Zero);
+        KeybdEvent(CdpWin32.VkControl, 0, 0, UIntPtr.Zero);
+        KeybdEvent(CdpWin32.VkRight, 0, 0, UIntPtr.Zero);
+        KeybdEvent(CdpWin32.VkRight, 0, CdpWin32.KeyEventUp, UIntPtr.Zero);
+        KeybdEvent(CdpWin32.VkControl, 0, CdpWin32.KeyEventUp, UIntPtr.Zero);
+        KeybdEvent(CdpWin32.VkLWin, 0, CdpWin32.KeyEventUp, UIntPtr.Zero);
+        Thread.Sleep(CdpTimeout.ForegroundDelayMs);
+    }
+
+    private static void SwitchDesktopLeft()
+    {
+        KeybdEvent(CdpWin32.VkLWin, 0, 0, UIntPtr.Zero);
+        KeybdEvent(CdpWin32.VkControl, 0, 0, UIntPtr.Zero);
+        KeybdEvent(CdpWin32.VkLeft, 0, 0, UIntPtr.Zero);
+        KeybdEvent(CdpWin32.VkLeft, 0, CdpWin32.KeyEventUp, UIntPtr.Zero);
+        KeybdEvent(CdpWin32.VkControl, 0, CdpWin32.KeyEventUp, UIntPtr.Zero);
+        KeybdEvent(CdpWin32.VkLWin, 0, CdpWin32.KeyEventUp, UIntPtr.Zero);
+        Thread.Sleep(CdpTimeout.ForegroundDelayMs);
+    }
+
     private static void FocusChrome()
     {
         var Root = AutomationElement.RootElement;
         var ChromeCondition = new PropertyCondition(AutomationElement.ClassNameProperty, CdpProto.ChromeWidgetClass);
         var Window = Root.FindFirst(TreeScope.Children, ChromeCondition);
+        if (Window != null)
+        {
+            SwitchToWindow(new IntPtr(Window.Current.NativeWindowHandle));
+            Console.WriteLine("Chrome focused");
+            return;
+        }
+        SwitchDesktopRight();
+        Window = AutomationElement.RootElement.FindFirst(TreeScope.Children, ChromeCondition);
+        if (Window != null)
+        {
+            SwitchToWindow(new IntPtr(Window.Current.NativeWindowHandle));
+            Console.WriteLine("Chrome focused");
+            return;
+        }
+        SwitchDesktopLeft();
+        SwitchDesktopLeft();
+        Window = AutomationElement.RootElement.FindFirst(TreeScope.Children, ChromeCondition);
         if (Window != null)
         {
             SwitchToWindow(new IntPtr(Window.Current.NativeWindowHandle));
