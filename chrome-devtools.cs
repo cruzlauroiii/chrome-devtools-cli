@@ -24,6 +24,12 @@ public partial class CdpCli
         var (Command, ParsedArgs) = ParseArgs(Argv);
         if (Command == "allow") { ClickAllowPrompt(); return; }
         await ConnectToChrome();
+        if (ParsedArgs.TryGetValue(CdpArg.PageId, out var GlobalPageId) && Command is not "select_page" and not "close_page")
+        {
+            var Pages = await GetPageTargets();
+            var PageIndex = int.Parse(GlobalPageId.ToString()!, System.Globalization.CultureInfo.InvariantCulture) - 1;
+            if (PageIndex >= 0 && PageIndex < Pages.Count) await AttachToTarget(Pages[PageIndex][CdpKey.TargetId]!.ToString());
+        }
         try { await DispatchCommand(Command, ParsedArgs); }
         finally { WebSocket?.Dispose(); }
     }
