@@ -52,7 +52,7 @@ public partial class CdpCli
             case "handle_dialog": await ExecuteHandleDialog(ParsedArgs); break;
             case "drag": await ExecuteDrag(ParsedArgs); break;
             case "upload_file": await ExecuteUploadFile(ParsedArgs); break;
-            default: Console.Error.WriteLine($"Unknown command: {Command}"); Environment.Exit(1); break;
+            default: Console.Error.WriteLine(string.Concat(CdpMsg.UnknownCommand, Command)); Environment.Exit(1); break;
         }
     }
 

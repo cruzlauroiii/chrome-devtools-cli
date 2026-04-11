@@ -156,41 +156,15 @@ public sealed class InterpolationConstantAnalyzer : DiagnosticAnalyzer
     private static void AnalyzeInterpolation(SyntaxNodeAnalysisContext Context)
     {
         var Interpolated = (InterpolatedStringExpressionSyntax)Context.Node;
-        if (IsInConstantOrStaticField(Interpolated))
-            return;
-        if (IsInWriteLineOrError(Interpolated))
-            return;
         foreach (var Content in Interpolated.Contents)
         {
             if (Content is InterpolatedStringTextSyntax Text)
             {
                 var TextValue = Text.TextToken.ValueText.Trim();
-                if (TextValue.Length > 3 && !IsFormatToken(TextValue))
+                if (TextValue.Length > 1)
                     Context.ReportDiagnostic(Diagnostic.Create(Rule, Text.GetLocation(), TextValue.Length > 30 ? TextValue.Substring(0, 30) + "..." : TextValue));
             }
         }
-    }
-
-    private static bool IsInConstantOrStaticField(SyntaxNode Node)
-    {
-        var Field = Node.Ancestors().OfType<FieldDeclarationSyntax>().FirstOrDefault();
-        if (Field != null && Field.Modifiers.Any(M => M.IsKind(SyntaxKind.ConstKeyword) || M.IsKind(SyntaxKind.StaticKeyword)))
-            return true;
-        return false;
-    }
-
-    private static bool IsInWriteLineOrError(SyntaxNode Node)
-    {
-        var Invocation = Node.Ancestors().OfType<InvocationExpressionSyntax>().FirstOrDefault();
-        if (Invocation == null)
-            return false;
-        var MethodName = Invocation.Expression.ToString();
-        return MethodName.Contains("WriteLine") || MethodName.Contains("Error.Write") || MethodName.Contains("AppendLine");
-    }
-
-    private static bool IsFormatToken(string Value)
-    {
-        return Value == ": " || Value == ", " || Value == " " || Value == "x" || Value == "/" || Value == "=" || Value.StartsWith("ws://");
     }
 }
 

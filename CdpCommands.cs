@@ -15,7 +15,7 @@ public partial class CdpCli
         {
             var Url = Pages[Index][CdpKey.Url]!.ToString();
             var Title = Pages[Index][CdpKey.Title]?.ToString() ?? string.Empty;
-            Console.WriteLine($"{Index + 1}: {Url}{(Title.Length > 0 ? $"  ({Title})" : string.Empty)}");
+            Console.WriteLine(string.Concat(Index + 1, CdpMsg.ColonSpace, Url, Title.Length > 0 ? string.Concat(CdpMsg.ParenOpen, Title, CdpMsg.ParenClose) : string.Empty));
         }
     }
 
@@ -24,9 +24,9 @@ public partial class CdpCli
         if (!Args.TryGetValue(CdpArg.PageId, out var PageId)) { Console.Error.WriteLine("Required: pageId"); return; }
         var Pages = await GetPageTargets();
         var Index = int.Parse(PageId.ToString()!, System.Globalization.CultureInfo.InvariantCulture) - 1;
-        if (Index < 0 || Index >= Pages.Count) { Console.Error.WriteLine($"Invalid pageId. Range: 1-{Pages.Count}"); return; }
+        if (Index < 0 || Index >= Pages.Count) { Console.Error.WriteLine(string.Concat(CdpMsg.InvalidPageIdRange, Pages.Count)); return; }
         await AttachToTarget(Pages[Index][CdpKey.TargetId]!.ToString());
-        Console.WriteLine($"Selected page {int.Parse(PageId.ToString()!, System.Globalization.CultureInfo.InvariantCulture)}: {Pages[Index][CdpKey.Url]}");
+        Console.WriteLine(string.Concat(CdpMsg.SelectedPage, int.Parse(PageId.ToString()!, System.Globalization.CultureInfo.InvariantCulture), CdpMsg.ColonSpace, Pages[Index][CdpKey.Url]));
     }
 
     internal async Task ExecuteClosePage(Dictionary<string, object> Args)
@@ -36,7 +36,7 @@ public partial class CdpCli
         var Index = int.Parse(PageId.ToString()!, System.Globalization.CultureInfo.InvariantCulture) - 1;
         if (Index < 0 || Index >= Pages.Count) { Console.Error.WriteLine("Invalid pageId"); return; }
         await SendBrowserCommand(Cdp.TargetCloseTarget, new JsonObject { [CdpKey.TargetId] = Pages[Index][CdpKey.TargetId]!.ToString() });
-        Console.WriteLine($"Closed page {int.Parse(PageId.ToString()!, System.Globalization.CultureInfo.InvariantCulture)}");
+        Console.WriteLine(string.Concat(CdpMsg.ClosedPage, int.Parse(PageId.ToString()!, System.Globalization.CultureInfo.InvariantCulture)));
     }
 
     internal async Task ExecuteNewPage(Dictionary<string, object> Args)
@@ -45,7 +45,7 @@ public partial class CdpCli
         var Target = await SendBrowserCommand(Cdp.TargetCreateTarget, new JsonObject { [CdpKey.Url] = Url });
         await AttachToTarget(Target![CdpKey.TargetId]!.ToString());
         await Task.Delay(CdpTimeout.PageLoadDelayMs);
-        Console.WriteLine($"Opened: {Url}");
+        Console.WriteLine(string.Concat(CdpMsg.Opened, Url));
         await ExecuteListPages();
     }
 
@@ -66,14 +66,14 @@ public partial class CdpCli
                     if (!Args.TryGetValue(CdpKey.Url, out var NavUrl)) { Console.Error.WriteLine("Required: url"); return; }
                     await SendCommand(Cdp.PageNavigate, new JsonObject { [CdpKey.Url] = NavUrl.ToString()! });
                     await Task.Delay(CdpTimeout.NavigationDelayMs);
-                    Console.WriteLine($"Navigated to {NavUrl}"); break;
+                    Console.WriteLine(string.Concat(CdpMsg.NavigatedTo, NavUrl)); break;
             }
         }
         else if (Args.TryGetValue(CdpKey.Url, out var DirectUrl))
         {
             await SendCommand(Cdp.PageNavigate, new JsonObject { [CdpKey.Url] = DirectUrl.ToString()! });
             await Task.Delay(CdpTimeout.NavigationDelayMs);
-            Console.WriteLine($"Navigated to {DirectUrl}");
+            Console.WriteLine(string.Concat(CdpMsg.NavigatedTo, DirectUrl));
         }
         await ExecuteListPages();
     }
@@ -93,7 +93,7 @@ public partial class CdpCli
         var ImageData = Convert.FromBase64String(ScreenshotResult![CdpKey.Data]!.ToString());
         var OutputPath = Args.TryGetValue(CdpArg.FilePath, out var FilePath) ? FilePath.ToString()! : Path.Combine(Path.GetTempPath(), string.Concat(CdpProto.ScreenshotPrefix, Guid.NewGuid().ToString("N"), ".", Format));
         File.WriteAllBytes(OutputPath, ImageData);
-        Console.WriteLine($"Screenshot saved: {OutputPath}");
+        Console.WriteLine(string.Concat(CdpMsg.ScreenshotSaved, OutputPath));
     }
 
     internal async Task ExecuteTakeSnapshot(Dictionary<string, object> Args)
@@ -109,10 +109,10 @@ public partial class CdpCli
             if (Role is "" or "none" or "InlineTextBox") continue;
             var Name = Node[CdpKey.Name]?[CdpKey.Value]?.ToString() ?? string.Empty;
             var NodeIdVal = Node[CdpKey.NodeId]?.ToString() ?? string.Empty;
-            Output.AppendLine($"  [{NodeIdVal}] {Role}{(Name.Length > 0 ? $" \"{Name}\"" : string.Empty)}");
+            Output.AppendLine(string.Concat(CdpMsg.BracketOpen, NodeIdVal, CdpMsg.BracketClose, Role, Name.Length > 0 ? string.Concat(CdpMsg.QuoteOpen, Name, CdpMsg.QuoteClose) : string.Empty));
         }
         var Content = Output.ToString();
-        if (Args.TryGetValue(CdpArg.FilePath, out var FilePath)) { File.WriteAllText(FilePath.ToString()!, Content); Console.WriteLine($"Snapshot saved: {FilePath}"); }
+        if (Args.TryGetValue(CdpArg.FilePath, out var FilePath)) { File.WriteAllText(FilePath.ToString()!, Content); Console.WriteLine(string.Concat(CdpMsg.SnapshotSaved, FilePath)); }
         else Console.Write(Content);
     }
 
@@ -120,8 +120,8 @@ public partial class CdpCli
     {
         if (!Args.TryGetValue(CdpArg.Function, out var Function)) { Console.Error.WriteLine("Required: function"); return; }
         await EnsurePageAttached();
-        var Result = await SendCommand(Cdp.RuntimeEvaluate, new JsonObject { [CdpKey.Expression] = $"({Function})()", [CdpKey.ReturnByValue] = true, [CdpKey.AwaitPromise] = true });
-        if (Result?[CdpKey.ExceptionDetails] != null) Console.Error.WriteLine($"Error: {Result[CdpKey.ExceptionDetails]![CdpKey.Text]}");
+        var Result = await SendCommand(Cdp.RuntimeEvaluate, new JsonObject { [CdpKey.Expression] = string.Concat("(", Function, CdpMsg.InvokeWrapper), [CdpKey.ReturnByValue] = true, [CdpKey.AwaitPromise] = true });
+        if (Result?[CdpKey.ExceptionDetails] != null) Console.Error.WriteLine(string.Concat(CdpMsg.ErrorLabel, Result[CdpKey.ExceptionDetails]![CdpKey.Text]));
         else Console.WriteLine(Result?[CdpKey.Result]?[CdpKey.Value] != null ? JsonSerializer.Serialize(Result[CdpKey.Result]![CdpKey.Value], JsonIndented) : CdpEscape.Undefined);
     }
 
@@ -156,7 +156,7 @@ public partial class CdpCli
         await EnsurePageAttached();
         foreach (var Character in Text.ToString()!) await SendCommand(Cdp.InputDispatchKeyEvent, new JsonObject { [CdpKey.Type] = CdpProto.Char, [CdpKey.Text] = Character.ToString() });
         if (Args.TryGetValue(CdpArg.SubmitKey, out var SubmitKey)) await SendCommand(Cdp.InputDispatchKeyEvent, new JsonObject { [CdpKey.Type] = CdpProto.KeyDown, [CdpKey.Key] = SubmitKey.ToString() });
-        Console.WriteLine($"Typed: {Text}");
+        Console.WriteLine(string.Concat(CdpMsg.Typed, Text));
     }
 
     internal async Task ExecutePressKey(Dictionary<string, object> Args)
@@ -168,7 +168,7 @@ public partial class CdpCli
         foreach (var Modifier in Parts.SkipLast(1)) { switch (Modifier.ToLower(System.Globalization.CultureInfo.InvariantCulture)) { case "control" or "ctrl": Mods |= CdpModifier.Control; break; case "alt": Mods |= CdpModifier.Alt; break; case "shift": Mods |= CdpModifier.Shift; break; case "meta" or "cmd": Mods |= CdpModifier.Meta; break; } }
         await SendCommand(Cdp.InputDispatchKeyEvent, new JsonObject { [CdpKey.Type] = CdpProto.KeyDown, [CdpKey.Key] = Parts.Last(), [CdpKey.Modifiers] = Mods });
         await SendCommand(Cdp.InputDispatchKeyEvent, new JsonObject { [CdpKey.Type] = CdpProto.KeyUp, [CdpKey.Key] = Parts.Last(), [CdpKey.Modifiers] = Mods });
-        Console.WriteLine($"Pressed: {Key}");
+        Console.WriteLine(string.Concat(CdpMsg.Pressed, Key));
     }
 
     internal async Task ExecuteListConsoleMessages()
@@ -183,9 +183,9 @@ public partial class CdpCli
             {
                 var MsgType = Msg[CdpKey.Params]![CdpKey.Type]?.ToString() ?? "log";
                 var Content = string.Join(" ", Msg[CdpKey.Params]![CdpKey.Args]!.AsArray().Select(A => A![CdpKey.Value]?.ToString() ?? A![CdpKey.Description]?.ToString() ?? string.Empty));
-                Console.WriteLine($"[{MsgType}] {Content}");
+                Console.WriteLine(string.Concat(CdpMsg.SquareOpen, MsgType, CdpMsg.BracketClose, Content));
             }
-            else Console.WriteLine($"[error] {Msg[CdpKey.Params]![CdpKey.ExceptionDetails]?[CdpKey.Text]}");
+            else Console.WriteLine(string.Concat(CdpMsg.ErrorLog, Msg[CdpKey.Params]![CdpKey.ExceptionDetails]?[CdpKey.Text]));
         }
     }
 
@@ -197,7 +197,7 @@ public partial class CdpCli
         Console.WriteLine("## Network Requests");
         var Counter = 1;
         foreach (var Request in Requests.TakeLast(50))
-            Console.WriteLine($"{Counter++}. {Request[CdpKey.Params]![CdpKey.Request]![CdpKey.Method]} {Request[CdpKey.Params]![CdpKey.Request]![CdpKey.Url]}");
+            Console.WriteLine(string.Concat(Counter++, CdpMsg.DotSpace, Request[CdpKey.Params]![CdpKey.Request]![CdpKey.Method], " ", Request[CdpKey.Params]![CdpKey.Request]![CdpKey.Url]));
     }
 
     internal async Task ExecuteResizePage(Dictionary<string, object> Args)
@@ -205,7 +205,7 @@ public partial class CdpCli
         if (!Args.TryGetValue(CdpKey.Width, out var Width) || !Args.TryGetValue(CdpKey.Height, out var Height)) { Console.Error.WriteLine("Required: width, height"); return; }
         await EnsurePageAttached();
         await SendCommand(Cdp.EmulationSetDeviceMetrics, new JsonObject { [CdpKey.Width] = int.Parse(Width.ToString()!, System.Globalization.CultureInfo.InvariantCulture), [CdpKey.Height] = int.Parse(Height.ToString()!, System.Globalization.CultureInfo.InvariantCulture), [CdpKey.DeviceScaleFactor] = 1, [CdpKey.Mobile] = false });
-        Console.WriteLine($"Resized to {Width}x{Height}");
+        Console.WriteLine(string.Concat(CdpMsg.ResizedTo, Width, CdpMsg.Separator, Height));
     }
 
     internal async Task ExecuteEmulate(Dictionary<string, object> Args)
@@ -223,7 +223,7 @@ public partial class CdpCli
         var DialogParams = new JsonObject { [CdpKey.Accept] = Action.ToString() == "accept" };
         if (Args.TryGetValue(CdpKey.PromptText, out var PromptTextVal)) DialogParams[CdpKey.PromptText] = PromptTextVal.ToString()!;
         await SendCommand(Cdp.PageHandleJavaScriptDialog, DialogParams);
-        Console.WriteLine($"Dialog {Action}ed");
+        Console.WriteLine(string.Concat(CdpMsg.DialogPrefix, Action, CdpMsg.DialogSuffix));
     }
 
     internal async Task ExecuteDrag(Dictionary<string, object> Args)
@@ -242,7 +242,7 @@ public partial class CdpCli
         if (Found?[CdpKey.NodeId]?.GetValue<int>() is > 0)
         {
             await SendCommand(Cdp.DomSetFileInputFiles, new JsonObject { [CdpKey.NodeId] = Found[CdpKey.NodeId]!.GetValue<int>(), [CdpKey.Files] = new JsonArray { JsonValue.Create(Path.GetFullPath(FilePath.ToString()!)) } });
-            Console.WriteLine($"Uploaded: {FilePath}");
+            Console.WriteLine(string.Concat(CdpMsg.Uploaded, FilePath));
         }
         else Console.Error.WriteLine("File input not found");
     }

@@ -118,6 +118,37 @@ public static class CdpEscape
     public const string Undefined = "undefined";
 }
 
+public static class CdpMsg
+{
+    public const string UnknownCommand = "Unknown command: ";
+    public const string SelectedPage = "Selected page ";
+    public const string ClosedPage = "Closed page ";
+    public const string Opened = "Opened: ";
+    public const string NavigatedTo = "Navigated to ";
+    public const string ScreenshotSaved = "Screenshot saved: ";
+    public const string SnapshotSaved = "Snapshot saved: ";
+    public const string Typed = "Typed: ";
+    public const string Pressed = "Pressed: ";
+    public const string Uploaded = "Uploaded: ";
+    public const string ResizedTo = "Resized to ";
+    public const string DialogPrefix = "Dialog ";
+    public const string DialogSuffix = "ed";
+    public const string ErrorLabel = "Error: ";
+    public const string ErrorLog = "[error] ";
+    public const string InvalidPageIdRange = "Invalid pageId. Range: 1-";
+    public const string InvokeWrapper = ")()";
+    public const string Separator = "x";
+    public const string ColonSpace = ": ";
+    public const string DotSpace = ". ";
+    public const string BracketOpen = "  [";
+    public const string BracketClose = "] ";
+    public const string ParenOpen = "  (";
+    public const string ParenClose = ")";
+    public const string QuoteOpen = " \"";
+    public const string QuoteClose = "\"";
+    public const string SquareOpen = "[";
+}
+
 public static class CdpProto
 {
     public const string ChromeScheme = "chrome://";
