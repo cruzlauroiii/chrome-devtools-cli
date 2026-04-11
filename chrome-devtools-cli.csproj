@@ -9,6 +9,8 @@
     <NoWarn>IL2026;IL3050</NoWarn>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Remove="analyzers\**" />
+    <ProjectReference Include="analyzers\DomainAnalyzers.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <PackageReference Include="StyleCop.Analyzers" Version="1.2.0-beta.556" PrivateAssets="all" />
     <PackageReference Include="Roslynator.Analyzers" Version="4.12.11" PrivateAssets="all" />
     <PackageReference Include="Meziantou.Analyzer" Version="2.0.186" PrivateAssets="all" />
