@@ -23,7 +23,6 @@ foreach($W in $R.FindAll([System.Windows.Automation.TreeScope]::Children,$C)){
 $B=New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty,[System.Windows.Automation.ControlType]::Button)
 foreach($N in $W.FindAll([System.Windows.Automation.TreeScope]::Descendants,$B)){
 if($N.Current.Name -eq 'Allow'){$P=$N.Current.BoundingRectangle;[CA]::Click([int]($P.X+$P.Width/2),[int]($P.Y+$P.Height/2));Start-Sleep -Milliseconds 200;[CA]::Click([int]($P.X+$P.Width/2),[int]($P.Y+$P.Height/2));Write-Host 'Clicked Allow'}
-if($N.Current.Name -eq 'Restore'){$P=$N.Current.BoundingRectangle;[CA]::Click([int]($P.X+$P.Width/2),[int]($P.Y+$P.Height/2));Write-Host 'Clicked Restore'}
 }}";
 
     private static void ClickAllowPrompt()

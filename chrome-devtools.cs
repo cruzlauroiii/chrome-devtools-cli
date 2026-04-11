@@ -58,17 +58,17 @@ public partial class CdpCli
 
     private async Task ConnectToChrome()
     {
-        ClickAllowPrompt();
         for (var Attempt = 0; Attempt < 3; Attempt++)
         {
-            if (!File.Exists(ActivePortFile)) { await Task.Delay(CdpTimeout.RetryDelayMs); ClickAllowPrompt(); if (!File.Exists(ActivePortFile)) continue; }
+            if (!File.Exists(ActivePortFile)) { ClickAllowPrompt(); await Task.Delay(CdpTimeout.RetryDelayMs); if (!File.Exists(ActivePortFile)) continue; }
             var Lines = File.ReadAllLines(ActivePortFile).Where(L => !string.IsNullOrWhiteSpace(L)).ToArray();
             if (Lines.Length < 2) continue;
             var Endpoint = string.Concat(CdpProto.WsPrefix, Lines[0].Trim(), Lines[1].Trim());
             WebSocket = new ClientWebSocket();
             using var Timeout = new CancellationTokenSource(CdpTimeout.ConnectTimeoutMs);
+            _ = Task.Run(async () => { await Task.Delay(CdpTimeout.PageLoadDelayMs); ClickAllowPrompt(); });
             try { await WebSocket.ConnectAsync(new Uri(Endpoint), Timeout.Token); return; }
-            catch { ClickAllowPrompt(); await Task.Delay(CdpTimeout.RetryDelayMs); }
+            catch { await Task.Delay(CdpTimeout.RetryDelayMs); }
         }
         Console.Error.WriteLine("Cannot connect. Enable: chrome://inspect/#remote-debugging");
         Environment.Exit(1);
