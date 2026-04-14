@@ -185,7 +185,7 @@ public partial class CdpCli
             // Click Allow concurrently — prompt appears DURING WebSocket handshake and blocks until clicked
             var AllowCts = new CancellationTokenSource();
             var AllowTask = Task.Run(async () => { while (!AllowCts.Token.IsCancellationRequested) { await Task.Delay(500); ClickAllowPrompt(); } });
-            try { await WebSocket.ConnectAsync(new Uri(Endpoint), Timeout.Token); AllowCts.Cancel(); Console.Error.WriteLine("Connected!"); return; }
+            try { await WebSocket.ConnectAsync(new Uri(Endpoint), Timeout.Token); AllowCts.Cancel(); DismissInfobar(); Console.Error.WriteLine("Connected!"); return; }
             catch (Exception Ex) { AllowCts.Cancel(); Console.Error.WriteLine(string.Concat("Connect failed: ", Ex.Message)); await Task.Delay(CdpTimeout.RetryDelayMs); }
         }
         Console.Error.WriteLine("Cannot connect. Enable: chrome://inspect/#remote-debugging");

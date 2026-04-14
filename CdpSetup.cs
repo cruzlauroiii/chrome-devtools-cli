@@ -153,8 +153,47 @@ public partial class CdpCli
                 return;
             }
             if (Debug) Console.Error.WriteLine("Allow button not found in any Chrome window");
+
+            // Also dismiss "Chrome is being controlled by automated test software" infobar
+            DismissInfobar(Debug);
         }
         catch (Exception Ex) { if (Debug) Console.Error.WriteLine(string.Concat("ClickAllowPrompt error: ", Ex.Message)); }
+    }
+
+    private static void DismissInfobar(bool Debug = false)
+    {
+        try
+        {
+            var Root = AutomationElement.RootElement;
+            var ChromeCondition = new PropertyCondition(AutomationElement.ClassNameProperty, CdpProto.ChromeWidgetClass);
+            foreach (AutomationElement Window in Root.FindAll(TreeScope.Children, ChromeCondition))
+            {
+                // The infobar dismiss button is "×" in the infobar row (y ~140-200, below address bar, above page content)
+                var ButtonCondition = new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button);
+                foreach (AutomationElement Button in Window.FindAll(TreeScope.Descendants, ButtonCondition))
+                {
+                    var Name = Button.Current.Name;
+                    var Rect = Button.Current.BoundingRectangle;
+                    if (Rect.IsEmpty) continue;
+                    // The × button on the infobar: name is "×", y between 140 and 220 (below toolbar, above page)
+                    if (Name == "×" && Rect.Y > 140 && Rect.Y < 220 && Rect.X > 0)
+                    {
+                        var X = (int)(Rect.X + Rect.Width / 2);
+                        var Y = (int)(Rect.Y + Rect.Height / 2);
+                        if (Debug) Console.Error.WriteLine(string.Concat("Infobar × at ", X, ",", Y, " rect=", Rect));
+                        SetCursorPos(X, Y);
+                        Thread.Sleep(50);
+                        MouseEvent(CdpWin32.MouseLeftDown, 0, 0, 0, 0);
+                        Thread.Sleep(50);
+                        MouseEvent(CdpWin32.MouseLeftUp, 0, 0, 0, 0);
+                        Console.Error.WriteLine("Dismissed infobar");
+                        return;
+                    }
+                }
+            }
+            if (Debug) Console.Error.WriteLine("Infobar × not found");
+        }
+        catch (Exception Ex) { if (Debug) Console.Error.WriteLine(string.Concat("DismissInfobar error: ", Ex.Message)); }
     }
 
     private static void ExecuteScreenshotDesktop(Dictionary<string, object> Args)
