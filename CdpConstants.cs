@@ -117,6 +117,7 @@ public static class CdpEscape
 
 public static class CdpMsg
 {
+    public const string ChromeNotRunning = "Chrome not running, starting...";
     public const string UnknownCommand = "Unknown command: ";
     public const string SelectedPage = "Selected page ";
     public const string ClosedPage = "Closed page ";
@@ -130,6 +131,7 @@ public static class CdpMsg
     public const string ResizedTo = "Resized to ";
     public const string DialogPrefix = "Dialog ";
     public const string DialogSuffix = "ed";
+    public const string AllowInvokeFailed = "Allow button found but InvokePattern not supported";
     public const string ErrorLabel = "Error: ";
     public const string ErrorLog = "[error] ";
     public const string InvalidPageIdRange = "Invalid pageId. Range: 1-";
@@ -148,6 +150,8 @@ public static class CdpMsg
 
 public static class CdpProto
 {
+    public const string ChromeProcessName = "chrome";
+    public const string ChromeExeName = "chrome.exe";
     public const string ChromeScheme = "chrome://";
     public const string ChromeExtensionScheme = "chrome-extension://";
     public const string NewTabUrl = "chrome://newtab/";
@@ -182,7 +186,7 @@ public static class CdpJs
 public static class CdpTimeout
 {
     public const int RetryDelayMs = 3000;
-    public const int ConnectTimeoutMs = 10000;
+    public const int ConnectTimeoutMs = 30000;
     public const int NavigationDelayMs = 3000;
     public const int PageLoadDelayMs = 2000;
     public const int ProcessWaitMs = 15000;

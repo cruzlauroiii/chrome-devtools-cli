@@ -1,6 +1,9 @@
 #pragma warning disable SA1400, SA1649, SA1402, SA1502, SA1128, SA1501, SA1119, SA1503, SA1513, SA1413, S6608
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows.Automation;
+using Path = System.IO.Path;
+using File = System.IO.File;
 
 public partial class CdpCli
 {
@@ -89,7 +92,7 @@ public partial class CdpCli
         void SwitchDesktopByDesktopId(ref Guid DesktopId);
     }
 
-    private static void ClickAllowPrompt()
+    private static void ClickAllowPrompt(bool Debug = false)
     {
         try
         {
@@ -98,6 +101,7 @@ public partial class CdpCli
             var ChromeCondition = new PropertyCondition(AutomationElement.ClassNameProperty, CdpProto.ChromeWidgetClass);
             if (Root.FindFirst(TreeScope.Children, ChromeCondition) == null)
             {
+                if (Debug) Console.Error.WriteLine("Chrome not on current desktop, switching right...");
                 SwitchDesktopRight();
                 if (Root.FindFirst(TreeScope.Children, ChromeCondition) == null) { SwitchDesktopLeft(); SwitchDesktopLeft(); }
             }
@@ -106,26 +110,51 @@ public partial class CdpCli
                 var WindowHandle = new IntPtr(Window.Current.NativeWindowHandle);
                 AutomationElement? AllowButton = null;
                 var ButtonCondition = new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button);
+                if (Debug)
+                {
+                    Console.Error.WriteLine(string.Concat("Window: ", Window.Current.Name, " hwnd=", WindowHandle));
+                    foreach (AutomationElement Button in Window.FindAll(TreeScope.Descendants, ButtonCondition))
+                        Console.Error.WriteLine(string.Concat("  Button: '", Button.Current.Name, "' rect=", Button.Current.BoundingRectangle));
+                }
                 foreach (AutomationElement Button in Window.FindAll(TreeScope.Descendants, ButtonCondition))
                 {
                     if (Button.Current.Name == CdpProto.AllowButtonName) { AllowButton = Button; break; }
                 }
                 if (AllowButton == null) continue;
+
+                // Bring Chrome to foreground
                 SwitchToWindow(WindowHandle);
                 Thread.Sleep(CdpTimeout.ForegroundDelayMs);
-                dynamic Bounds = AllowButton!.GetCurrentPropertyValue(AutomationElement.BoundingRectangleProperty);
-                var ClickX = (int)(Bounds.X + (Bounds.Width / 2));
-                var ClickY = (int)(Bounds.Y + (Bounds.Height / 2));
-                Console.Error.WriteLine(string.Concat(CdpShell.ClickedPrefix, " ", CdpProto.AllowButtonName, " ", ClickX.ToString(System.Globalization.CultureInfo.InvariantCulture), ",", ClickY.ToString(System.Globalization.CultureInfo.InvariantCulture)));
-                SetCursorPos(ClickX, ClickY);
-                Thread.Sleep(CdpTimeout.ClickDelayMs);
-                MouseEvent(CdpWin32.MouseLeftDown, 0, 0, 0, 0);
-                MouseEvent(CdpWin32.MouseLeftUp, 0, 0, 0, 0);
+
+                var Rect = AllowButton.Current.BoundingRectangle;
+                if (Debug) Console.Error.WriteLine(string.Concat("Allow button rect: ", Rect, " empty=", Rect.IsEmpty));
+
+                // Click Allow button using mouse at its center coordinates
+                if (!Rect.IsEmpty)
+                {
+                    var X = (int)(Rect.X + Rect.Width / 2);
+                    var Y = (int)(Rect.Y + Rect.Height / 2);
+                    if (Debug) Console.Error.WriteLine(string.Concat("Mouse click at ", X, ",", Y));
+                    SetCursorPos(X, Y);
+                    Thread.Sleep(50);
+                    MouseEvent(CdpWin32.MouseLeftDown, 0, 0, 0, 0);
+                    Thread.Sleep(50);
+                    MouseEvent(CdpWin32.MouseLeftUp, 0, 0, 0, 0);
+                }
+                else
+                {
+                    // Fallback: keyboard — SetFocus + Tab x2 + Enter
+                    try { AllowButton.SetFocus(); } catch { }
+                    KeybdEvent(0x09, 0, 0, UIntPtr.Zero); KeybdEvent(0x09, 0, CdpWin32.KeyEventUp, UIntPtr.Zero);
+                    KeybdEvent(0x09, 0, 0, UIntPtr.Zero); KeybdEvent(0x09, 0, CdpWin32.KeyEventUp, UIntPtr.Zero);
+                    KeybdEvent(0x0D, 0, 0, UIntPtr.Zero); KeybdEvent(0x0D, 0, CdpWin32.KeyEventUp, UIntPtr.Zero);
+                }
                 Console.Error.WriteLine(string.Concat(CdpShell.ClickedPrefix, " ", CdpProto.AllowButtonName));
                 return;
             }
+            if (Debug) Console.Error.WriteLine("Allow button not found in any Chrome window");
         }
-        catch { /* Prompt may not be present or was dismissed */ }
+        catch (Exception Ex) { if (Debug) Console.Error.WriteLine(string.Concat("ClickAllowPrompt error: ", Ex.Message)); }
     }
 
     private static void ExecuteScreenshotDesktop(Dictionary<string, object> Args)
@@ -159,6 +188,64 @@ public partial class CdpCli
         KeybdEvent(CdpWin32.VkControl, 0, CdpWin32.KeyEventUp, UIntPtr.Zero);
         KeybdEvent(CdpWin32.VkLWin, 0, CdpWin32.KeyEventUp, UIntPtr.Zero);
         Thread.Sleep(CdpTimeout.ForegroundDelayMs);
+    }
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    private static extern uint SendInput(uint Count, INPUT[] Inputs, int Size);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct INPUT { public uint Type; public INPUTUNION U; }
+    [StructLayout(LayoutKind.Explicit)]
+    private struct INPUTUNION { [FieldOffset(0)] public KEYBDINPUT Ki; }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct KEYBDINPUT { public ushort Vk; public ushort Scan; public uint Flags; public uint Time; public IntPtr Extra; }
+
+    private static void TypeString(string Text)
+    {
+        foreach (var Ch in Text)
+        {
+            var Inputs = new INPUT[2];
+            Inputs[0] = new INPUT { Type = 1, U = new INPUTUNION { Ki = new KEYBDINPUT { Vk = 0, Scan = Ch, Flags = 4 } } }; // KEYEVENTF_UNICODE
+            Inputs[1] = new INPUT { Type = 1, U = new INPUTUNION { Ki = new KEYBDINPUT { Vk = 0, Scan = Ch, Flags = 4 | 2 } } }; // KEYEVENTF_UNICODE | KEYEVENTF_KEYUP
+            SendInput(2, Inputs, Marshal.SizeOf<INPUT>());
+        }
+    }
+
+    private static void NavigateAddressBar(string Url)
+    {
+        var Root = AutomationElement.RootElement;
+        var ChromeCondition = new PropertyCondition(AutomationElement.ClassNameProperty, CdpProto.ChromeWidgetClass);
+        var Window = Root.FindFirst(TreeScope.Children, ChromeCondition);
+        if (Window == null) { Console.Error.WriteLine("Chrome not found"); return; }
+        SwitchToWindow(new IntPtr(Window.Current.NativeWindowHandle));
+        Thread.Sleep(200);
+        // Copy URL to clipboard, Ctrl+L to focus address bar, Ctrl+V to paste, Enter
+        var Thread2 = new Thread(() => { System.Windows.Forms.Clipboard.SetText(Url); });
+        Thread2.SetApartmentState(ApartmentState.STA);
+        Thread2.Start();
+        Thread2.Join();
+        // Escape to dismiss any dropdown, then Ctrl+L to focus address bar
+        KeybdEvent(CdpWin32.VkEscape, 0, 0, UIntPtr.Zero);
+        KeybdEvent(CdpWin32.VkEscape, 0, CdpWin32.KeyEventUp, UIntPtr.Zero);
+        Thread.Sleep(100);
+        KeybdEvent(CdpWin32.VkControl, 0, 0, UIntPtr.Zero);
+        KeybdEvent(0x4C, 0, 0, UIntPtr.Zero); // L
+        KeybdEvent(0x4C, 0, CdpWin32.KeyEventUp, UIntPtr.Zero);
+        KeybdEvent(CdpWin32.VkControl, 0, CdpWin32.KeyEventUp, UIntPtr.Zero);
+        Thread.Sleep(300);
+        // Ctrl+V to paste URL from clipboard
+        KeybdEvent(CdpWin32.VkControl, 0, 0, UIntPtr.Zero);
+        KeybdEvent(0x56, 0, 0, UIntPtr.Zero); // V
+        KeybdEvent(0x56, 0, CdpWin32.KeyEventUp, UIntPtr.Zero);
+        KeybdEvent(CdpWin32.VkControl, 0, CdpWin32.KeyEventUp, UIntPtr.Zero);
+        Thread.Sleep(200);
+        // Enter to navigate
+        KeybdEvent(CdpWin32.VkReturn, 0, 0, UIntPtr.Zero);
+        KeybdEvent(CdpWin32.VkReturn, 0, CdpWin32.KeyEventUp, UIntPtr.Zero);
+        Console.WriteLine(string.Concat("Navigated to ", Url));
     }
 
     private static void FocusChrome()

@@ -1,9 +1,20 @@
+#:property ExperimentalFileBasedProgramEnableIncludeDirective=true
+#:property TargetFramework=net11.0-windows
+#:property UseWindowsForms=true
+#:property UseWPF=true
+#:property PublishAot=false
+#:include CdpCommands.cs
+#:include CdpConstants.cs
+#:include CdpSetup.cs
 #pragma warning disable SA1400, SA1649, SA1402, SA1502, SA1128, SA1501, SA1119, SA1503, SA1513, SA1413, S6608
 using System.Diagnostics;
+using System.IO;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Path = System.IO.Path;
+using File = System.IO.File;
 
 await new CdpCli().RunAsync(args);
 
@@ -18,13 +29,21 @@ public partial class CdpCli
     private int CommandId = 1;
     private readonly List<JsonNode> EventBuffer = new();
 
+    private const int ServePort = 9333;
+
     public async Task RunAsync(string[] Argv)
     {
         if (Argv.Length == 0 || Argv[0] is "--help" or "-h" or "help") { PrintHelp(); return; }
         var (Command, ParsedArgs) = ParseArgs(Argv);
-        if (Command == "allow") { ClickAllowPrompt(); return; }
+        // Local-only commands (no Chrome connection needed)
+        if (Command == "allow") { ClickAllowPrompt(ParsedArgs.ContainsKey("debug")); return; }
         if (Command == "screenshot_desktop") { ExecuteScreenshotDesktop(ParsedArgs); return; }
         if (Command == "focus_chrome") { FocusChrome(); return; }
+        if (Command == "navigate_address_bar") { NavigateAddressBar(ParsedArgs.TryGetValue(CdpKey.Url, out var NavUrl) ? NavUrl.ToString()! : ""); return; }
+        if (Command == "serve") { await RunServeMode(); return; }
+        // If serve is running, forward the command to it
+        if (await TryForwardToServe(Argv)) return;
+        // Otherwise connect directly
         await ConnectToChrome();
         if (ParsedArgs.TryGetValue(CdpArg.PageId, out var GlobalPageId) && Command is not "select_page" and not "close_page")
         {
@@ -34,6 +53,88 @@ public partial class CdpCli
         }
         try { await DispatchCommand(Command, ParsedArgs); }
         finally { WebSocket?.Dispose(); }
+    }
+
+    private static async Task<bool> TryForwardToServe(string[] Argv)
+    {
+        try
+        {
+            using var Http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+            var Payload = string.Join(" ", Argv.Select(A => A.Contains(' ') ? string.Concat("\"", A, "\"") : A));
+            var Response = await Http.PostAsync(string.Concat("http://127.0.0.1:", ServePort, "/exec"), new System.Net.Http.StringContent(Payload, Encoding.UTF8));
+            Console.Write(await Response.Content.ReadAsStringAsync());
+            return true;
+        }
+        catch { return false; }
+    }
+
+    private async Task RunServeMode()
+    {
+        await ConnectToChrome();
+        var Listener = new System.Net.HttpListener();
+        Listener.Prefixes.Add(string.Concat("http://127.0.0.1:", ServePort, "/"));
+        Listener.Start();
+        Console.Error.WriteLine(string.Concat("serve: connected, listening on http://127.0.0.1:", ServePort));
+        while (true)
+        {
+            var Ctx = await Listener.GetContextAsync();
+            var Req = Ctx.Request;
+            var Res = Ctx.Response;
+            if (Req.HttpMethod == "OPTIONS") { Res.StatusCode = 204; Res.Close(); continue; }
+            // POST /exec with body = full command line (same as CLI args)
+            string Line;
+            using (var Reader = new System.IO.StreamReader(Req.InputStream)) Line = (await Reader.ReadToEndAsync()).Trim();
+            var Output = new StringBuilder();
+            var OldOut = Console.Out;
+            var OldErr = Console.Error;
+            Console.SetOut(new System.IO.StringWriter(Output));
+            Console.SetError(new System.IO.StringWriter(Output));
+            try
+            {
+                var LineArgs = SplitArgs(Line);
+                var (Cmd, Args) = ParseArgs(LineArgs);
+                if (Cmd == "allow") ClickAllowPrompt(Args.ContainsKey("debug"));
+                else if (Cmd == "screenshot_desktop") ExecuteScreenshotDesktop(Args);
+                else if (Cmd == "focus_chrome") FocusChrome();
+                else if (Cmd == "navigate_address_bar") NavigateAddressBar(Args.TryGetValue(CdpKey.Url, out var Nu) ? Nu.ToString()! : "");
+                else
+                {
+                    SessionId = null;
+                    if (Args.TryGetValue(CdpArg.PageId, out var Pid) && Cmd is not "select_page" and not "close_page")
+                    {
+                        var Pages = await GetPageTargets();
+                        var Idx = int.Parse(Pid.ToString()!, System.Globalization.CultureInfo.InvariantCulture) - 1;
+                        if (Idx >= 0 && Idx < Pages.Count) await AttachToTarget(Pages[Idx][CdpKey.TargetId]!.ToString());
+                    }
+                    await DispatchCommand(Cmd, Args);
+                }
+            }
+            catch (Exception Ex) { Output.AppendLine(string.Concat("Error: ", Ex.Message)); }
+            Console.SetOut(OldOut);
+            Console.SetError(OldErr);
+            var ResponseBytes = Encoding.UTF8.GetBytes(Output.ToString());
+            Res.ContentType = "text/plain; charset=utf-8";
+            Res.ContentLength64 = ResponseBytes.Length;
+            await Res.OutputStream.WriteAsync(ResponseBytes);
+            Res.Close();
+        }
+    }
+
+    private static string[] SplitArgs(string Line)
+    {
+        var Args = new List<string>();
+        var Current = new StringBuilder();
+        var InQuote = false;
+        var QuoteChar = '"';
+        foreach (var Ch in Line)
+        {
+            if (InQuote) { if (Ch == QuoteChar) InQuote = false; else Current.Append(Ch); }
+            else if (Ch is '"' or '\'') { InQuote = true; QuoteChar = Ch; }
+            else if (Ch == ' ') { if (Current.Length > 0) { Args.Add(Current.ToString()); Current.Clear(); } }
+            else Current.Append(Ch);
+        }
+        if (Current.Length > 0) Args.Add(Current.ToString());
+        return Args.ToArray();
     }
 
     private async Task DispatchCommand(string Command, Dictionary<string, object> ParsedArgs)
@@ -66,18 +167,26 @@ public partial class CdpCli
 
     private async Task ConnectToChrome()
     {
-        var AllowClicked = false;
+        if (Process.GetProcessesByName(CdpProto.ChromeProcessName).Length == 0)
+        {
+            Console.Error.WriteLine(CdpMsg.ChromeNotRunning);
+            Process.Start(new ProcessStartInfo { FileName = CdpProto.ChromeExeName, UseShellExecute = true });
+            await Task.Delay(CdpTimeout.RetryDelayMs);
+        }
         for (var Attempt = 0; Attempt < 3; Attempt++)
         {
-            if (!File.Exists(ActivePortFile)) { if (!AllowClicked) { ClickAllowPrompt(); AllowClicked = true; } await Task.Delay(CdpTimeout.RetryDelayMs); if (!File.Exists(ActivePortFile)) continue; }
+            if (!File.Exists(ActivePortFile)) { ClickAllowPrompt(); await Task.Delay(CdpTimeout.RetryDelayMs); if (!File.Exists(ActivePortFile)) continue; }
             var Lines = File.ReadAllLines(ActivePortFile).Where(L => !string.IsNullOrWhiteSpace(L)).ToArray();
             if (Lines.Length < 2) continue;
             var Endpoint = string.Concat(CdpProto.WsPrefix, Lines[0].Trim(), Lines[1].Trim());
+            Console.Error.WriteLine(string.Concat("Connecting to ", Endpoint));
             WebSocket = new ClientWebSocket();
             using var Timeout = new CancellationTokenSource(CdpTimeout.ConnectTimeoutMs);
-            if (!AllowClicked) { _ = Task.Run(async () => { await Task.Delay(CdpTimeout.PageLoadDelayMs); ClickAllowPrompt(); }); AllowClicked = true; }
-            try { await WebSocket.ConnectAsync(new Uri(Endpoint), Timeout.Token); return; }
-            catch { await Task.Delay(CdpTimeout.RetryDelayMs); }
+            // Click Allow concurrently — prompt appears DURING WebSocket handshake and blocks until clicked
+            var AllowCts = new CancellationTokenSource();
+            var AllowTask = Task.Run(async () => { while (!AllowCts.Token.IsCancellationRequested) { await Task.Delay(500); ClickAllowPrompt(); } });
+            try { await WebSocket.ConnectAsync(new Uri(Endpoint), Timeout.Token); AllowCts.Cancel(); Console.Error.WriteLine("Connected!"); return; }
+            catch (Exception Ex) { AllowCts.Cancel(); Console.Error.WriteLine(string.Concat("Connect failed: ", Ex.Message)); await Task.Delay(CdpTimeout.RetryDelayMs); }
         }
         Console.Error.WriteLine("Cannot connect. Enable: chrome://inspect/#remote-debugging");
         Environment.Exit(1);

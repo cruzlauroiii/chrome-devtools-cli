@@ -1,6 +1,9 @@
 #pragma warning disable SA1400, SA1649, SA1402, SA1502, SA1128, SA1501, SA1119, SA1503, SA1513, SA1413, S6608
+using System.IO;
 using System.Text;
 using System.Text.Json;
+using Path = System.IO.Path;
+using File = System.IO.File;
 using System.Text.Json.Nodes;
 
 public partial class CdpCli
