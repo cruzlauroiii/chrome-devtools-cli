@@ -1,0 +1,39 @@
+bin/
+obj/
+*.png
+
+# Secrets and certs (added during C:\repo migration)
+*.pfx
+*.p12
+*.pem
+*.key
+*.crt
+id_rsa*
+id_ed25519*
+.env
+.env.*
+!.env.example
+secrets.json
+!appsettings.json
+appsettings.*.json
+!appsettings.Local.json.example
+.dev.vars
+
+# Local Claude Code preferences (user-specific)
+.claude/settings.local.json
+# Session/auth artifacts (added during C:\repo migration)
+cookies.txt
+cookies.json
+session.json
+token.json
+token.txt
+auth.json
+.session
+credentials.json
+credentials
+.netrc
+*.jks
+*.keystore
+service-account.json
+*-sa.json
+*.p8
